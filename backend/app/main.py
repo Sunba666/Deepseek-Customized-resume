@@ -11,7 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from .config import get_settings
-from .routers import analysis, companies, export, resume
+from .routers import analysis, analyze, companies, export, resume
 from .services import risk_checker
 from .utils import file_handler
 
@@ -48,6 +48,7 @@ app.include_router(resume.router)
 app.include_router(analysis.router)
 app.include_router(companies.router)
 app.include_router(export.router)
+app.include_router(analyze.router)
 
 
 @app.get("/api/health")

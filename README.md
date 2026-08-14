@@ -48,15 +48,28 @@ npm run dev          # http://localhost:5173（/api 自动代理到后端）
 
 浏览器打开 http://localhost:5173 即可使用。
 
-### 3. 配置 LLM（可选）
+### 3. 配置 LLM 与搜索（前端设置页，点右上角 ⚙️）
 
-设置页填入 Base URL / API Key / 模型名，或复制 `backend/.env.example` 为 `backend/.env` 填写：
+分析结果**真实来自 LLM 推理**（不允许模拟数据），必须配置 LLM：
+
+| 设置项 | 说明 |
+| --- | --- |
+| LLM API Key | OpenAI 兼容服务 Key（OpenAI / DeepSeek / Ollama 等） |
+| LLM Base URL | 默认 `https://api.openai.com/v1`；Ollama 填 `http://localhost:11434/v1` |
+| LLM 模型名称 | 如 `gpt-4o`、`deepseek-chat` |
+| 搜索服务 / 搜索 Key | 可选：`Serper.dev` / `Tavily`；不填则仅用 LLM 内部知识，结果标注「非实时」 |
+
+也可复制 `backend/.env.example` 为 `backend/.env` 填写（仅为后端兜底默认值）：
 
 ```ini
-LLM_BASE_URL=https://api.deepseek.com
+LLM_BASE_URL=https://api.openai.com/v1
 LLM_API_KEY=sk-xxx
-LLM_MODEL=deepseek-chat
+LLM_MODEL=gpt-4o
+SEARCH_PROVIDER=serper
+SEARCH_API_KEY=sk-xxx
 ```
+
+> ⚠️ 隐私提示：启用分析后，简历文本会发送给您配置的 LLM API 与搜索 API 处理。
 
 **不填 Key 也能用**：内置规则引擎完成岗位画像、匹配度、STAR 建议与风险摘要（文本较生硬）。
 
@@ -106,6 +119,7 @@ resume-advisor/
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
+| POST | `/api/analyze` | **主接口**：上传简历 → 脱敏 → LLM 画像 →（可选搜索）→ LLM 深度蒸馏，返回结构化 JSON |
 | POST | `/api/resume/parse` | 上传简历（multipart），返回脱敏文本与预览 |
 | POST | `/api/analysis/portrait` | 生成职业画像（LLM 或规则引擎） |
 | POST | `/api/companies/recommend` | 生成方案：公司推荐 + 风险核验 + 匹配度 + STAR |

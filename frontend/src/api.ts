@@ -81,23 +81,83 @@ export function health(): Promise<Settings & { status: string }> {
   return fetch(`${BASE}/health`).then((r) => r.json())
 }
 
+// ---------- 深度分析（真实 LLM + 可选搜索） ----------
+
+export interface AnalyzeResult {
+  portrait: {
+    target_role: string
+    skills: string[]
+    years_experience: string
+    education: string
+    city: string
+  }
+  companies: {
+    name: string
+    city: string
+    industry: string
+    risk_level: 'normal' | 'caution' | 'high' | 'unknown'
+    risk_label: string
+    recommend_reason: string
+    channels: { name: string; url: string }[]
+    risk_items: { type: string; description: string; source_url: string }[]
+  }[]
+  star_advice: {
+    quote: string
+    problem: string
+    situation: string
+    task: string
+    action: string
+    result: string
+    rewrite: string
+  }[]
+  realtime: boolean
+  notice: string
+}
+
+export function analyzeResume(
+  file: File,
+  settings: AppSettings,
+): Promise<AnalyzeResult> {
+  const form = new FormData()
+  form.append('file', file)
+  form.append('llm_base_url', settings.llm_base_url)
+  form.append('llm_api_key', settings.llm_api_key)
+  form.append('llm_model', settings.llm_model)
+  form.append('search_provider', settings.search_provider)
+  form.append('search_api_key', settings.search_api_key)
+  return fetch(`${BASE}/analyze`, { method: 'POST', body: form }).then(async (res) => {
+    if (!res.ok) {
+      let detail = await res.text()
+      try {
+        detail = (JSON.parse(detail) as { detail?: string }).detail || detail
+      } catch {
+        /* keep raw */
+      }
+      throw new Error(detail || `分析失败 (${res.status})`)
+    }
+    return res.json()
+  })
+}
+
 // ---------- 设置（仅本地存储，后端不保存任何用户配置） ----------
+
+export type SearchProvider = '' | 'serper' | 'tavily'
 
 export interface AppSettings {
   llm_base_url: string
   llm_api_key: string
   llm_model: string
-  qcc_api_key: string
-  tianyancha_api_key: string
+  search_provider: SearchProvider
+  search_api_key: string
   redact_by_default: boolean
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
-  llm_base_url: 'https://api.deepseek.com',
+  llm_base_url: 'https://api.openai.com/v1',
   llm_api_key: '',
-  llm_model: 'deepseek-chat',
-  qcc_api_key: '',
-  tianyancha_api_key: '',
+  llm_model: 'gpt-4o',
+  search_provider: '',
+  search_api_key: '',
   redact_by_default: true,
 }
 
