@@ -83,33 +83,40 @@ export function health(): Promise<Settings & { status: string }> {
 
 // ---------- 深度分析（真实 LLM + 可选搜索） ----------
 
+export interface CareerProfile {
+  target_role: string
+  skills: string[]
+  years_experience: string
+  education: string
+  city: string
+}
+
+export interface RecommendedCompany {
+  name: string
+  city: string
+  industry: string
+  risk_level: 'normal' | 'caution' | 'high' | 'unknown'
+  risk_label: string
+  recommendation_reason: string
+  channels: { name: string; url: string }[]
+  risk_details: { description: string; source_url: string }[]
+  note: string
+}
+
+export interface ResumeAdvice {
+  quote: string
+  problem: string
+  situation: string
+  task: string
+  action: string
+  result: string
+  rewrite: string
+}
+
 export interface AnalyzeResult {
-  portrait: {
-    target_role: string
-    skills: string[]
-    years_experience: string
-    education: string
-    city: string
-  }
-  companies: {
-    name: string
-    city: string
-    industry: string
-    risk_level: 'normal' | 'caution' | 'high' | 'unknown'
-    risk_label: string
-    recommend_reason: string
-    channels: { name: string; url: string }[]
-    risk_items: { type: string; description: string; source_url: string }[]
-  }[]
-  star_advice: {
-    quote: string
-    problem: string
-    situation: string
-    task: string
-    action: string
-    result: string
-    rewrite: string
-  }[]
+  career_profile: CareerProfile
+  recommended_companies: RecommendedCompany[]
+  resume_advice: ResumeAdvice[]
   realtime: boolean
   notice: string
 }

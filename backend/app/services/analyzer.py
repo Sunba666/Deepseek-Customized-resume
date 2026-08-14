@@ -1,8 +1,11 @@
-"""核心分析流水线：解析 → 脱敏 → LLM 职业画像 → 搜索 → LLM 深度蒸馏 → 结构化 JSON。
+"""核心分析流水线：解析 → 脱敏 → LLM 职业画像 → 搜索 → LLM 筛选与风险评估 → 结构化 JSON。
 
-PRD 要求（PRD #7）：
-- 所有分析结果真实来自模型推理与搜索数据，不得使用模拟数据。
-- 未配置搜索时跳过搜索步骤，LLM 仅基于内部知识，并标注「非实时」。
+PRD 要求（PRD #9）：
+- 搜索 API 返回的所有原始内容（标题、链接、摘要、正文）只能作为 LLM 输入素材，
+  绝不能直接出现在最终 API 响应中（禁止 search_results_raw / snippets / organic_results 等字段）。
+- LLM 必须执行「公司筛选与风险评估」：从搜索结果识别真实公司 → 正规性判断
+  （劳动仲裁/欠薪/失信/经营异常等）→ 剔除高风险或信息严重不足的公司 → 只输出通过筛选的公司。
+- 未配置搜索时，LLM 基于自身知识生成真实公司，同样进行自我判断，并标注「信息可能滞后」。
 - LLM 使用 OpenAI 兼容 API，配置由前端传入（Base URL / Key / 模型），温度 0.3，输出 JSON。
 """
 import json
@@ -18,10 +21,16 @@ from .search_client import search
 
 logger = logging.getLogger(__name__)
 
+# PRD #9 强化版系统提示词
 SYSTEM_PROMPT = (
-    "你是资深职业规划师 + 企业背景调查分析师。基于简历和搜索数据，输出包含职业画像、"
-    "推荐公司（含风险等级和投递渠道）、简历优化建议的结构化结果。"
-    "要求信息准确，不得编造；风险信息需附来源 URL；如数据不足，明确标注「未知」。"
+    "你是一名资深职业规划师和企业背景调查分析师。你会收到简历解析结果、职业画像、"
+    "以及一段来自搜索引擎的原始文本（可能包含公司信息、风险记录、招聘信息）。\n"
+    "你的任务是从这段文本中提取、筛选、分析并输出推荐公司。你必须：\n"
+    "- 只推荐真实存在且你判断为正规的公司；\n"
+    "- 如果文本中包含该公司的风险信息，必须提及并给出来源链接；\n"
+    "- 如果文本信息不足，你可以基于自身知识补充，但需标注「未知」；\n"
+    "- 不得输出搜索原文，只输出结构化结果；\n"
+    "- 不得编造公司或风险信息。"
 )
 
 PORTRAIT_PROMPT = (
@@ -33,27 +42,35 @@ PORTRAIT_PROMPT = (
 )
 
 ANALYZE_PROMPT = (
-    "你是资深职业规划师 + 企业背景调查分析师。基于简历画像与搜索结果，输出求职方案。\n"
+    "你是资深职业规划师 + 企业背景调查分析师。基于简历画像与搜索原始文本，执行【公司筛选与风险评估】并输出求职方案。\n"
     "请严格输出如下 JSON 结构：\n"
     '{\n'
-    '  "portrait": {"target_role":"...","skills":[...],"years_experience":"...","education":"...","city":"..."},\n'
-    '  "companies": [{"name":"公司名","city":"城市","industry":"行业","risk_level":"normal|caution|high|unknown",'
-    '"risk_label":"🟢 正常 / 🟡 需注意 / 🔴 高风险 / ⚪ 未知","recommend_reason":"推荐理由",'
-    '"channels":[{"name":"渠道名","url":"链接"}],"risk_items":[{"type":"风险类型","description":"说明","source_url":"来源URL"}]}],\n'
-    '  "star_advice": [{"quote":"简历原文","problem":"问题","situation":"S","task":"T","action":"A","result":"R",'
+    '  "career_profile": {"target_role":"...","skills":[...],"years_experience":"...","education":"...","city":"..."},\n'
+    '  "recommended_companies": [{"name":"公司名","city":"城市","industry":"行业",'
+    '"risk_level":"normal|caution|high|unknown","risk_label":"🟢 正常 / 🟡 需注意 / 🔴 高风险 / ⚪ 未知",'
+    '"recommendation_reason":"推荐理由(LLM生成)",'
+    '"channels":[{"name":"渠道名","url":"链接"}],'
+    '"risk_details":[{"description":"风险说明","source_url":"证据链接(仅当有依据时)"}],'
+    '"note":"补充说明，如 信息基于搜索结果，建议人工核实"}],\n'
+    '  "resume_advice": [{"quote":"简历原文","problem":"问题","situation":"S","task":"T","action":"A","result":"R",'
     '"rewrite":"优化示例"}]\n'
     '}\n'
-    "核心要求：\n"
-    "- 推荐公司必须由你基于简历画像与搜索结果【自行推理生成 5~15 家】，必须是【真实存在】的公司，"
-    "严禁虚构、严禁从任何预置列表读取；\n"
-    "- 若提供了搜索结果：优先从搜索结果中提炼真实公司与招聘信息，再结合自身知识补充推荐理由与投递渠道；\n"
-    "- 若未提供搜索结果：基于自身知识生成真实公司，并附上可验证的投递渠道"
-    "（官网招聘页、公开邮箱、招聘平台链接等），同时明确标注「信息可能滞后，建议人工核实」；\n"
-    "- 每家公司的风险等级基于已知信息评估，风险说明须附证据链接（如有）；无证据时 risk_items 留空、"
-    "risk_level 标注 unknown；\n"
-    "- 简历优化建议基于原文，使用 STAR 法则，不得凭空添加经历。\n"
+    "必须执行的公司筛选与风险评估流程：\n"
+    "1. 从搜索原始文本中识别出【真实存在】的公司名称（严禁虚构、严禁从任何预置列表读取）；\n"
+    "2. 对每家公司做正规性判断：结合搜索到的风险信息（劳动仲裁、欠薪、失信、经营异常等），"
+    "判断该公司是否正规、是否值得推荐；\n"
+    "3. 剔除明显高风险或信息严重不足的公司；\n"
+    "4. 只输出【通过筛选】的公司，推荐 5~15 家；每家公司必须给出：推荐理由、风险等级、"
+    "风险说明及证据链接（来自搜索结果的 URL）、投递渠道（官网、邮箱、招聘平台等）；\n"
+    "5. 若搜索原始文本为空（未配置搜索）：基于自身知识生成真实公司，同样进行自我判断，"
+    "只推荐你判断正规、可信的公司，并在 note 中标注「信息可能滞后，建议人工核实」；\n"
+    "6. 简历优化建议基于原文，使用 STAR 法则，不得凭空添加经历。\n"
+    "硬性约束：\n"
+    "- 【不得】在输出中包含任何搜索原始文本、标题、摘要或片段，只输出结构化提炼结果；\n"
+    "- 【不得】编造公司、风险或渠道信息；风险说明无证据时 risk_details 留空、risk_level 标 unknown；\n"
+    "- 风险等级只允许 normal / caution / high / unknown 四种。\n"
     "简历画像：\n__PORTRAIT__\n"
-    "搜索结果（可能为空）：\n__SEARCH__\n"
+    "搜索原始文本（仅作为素材，可能为空）：\n__SEARCH__\n"
     "简历文本（已脱敏）：\n__RESUME__"
 )
 
@@ -87,7 +104,11 @@ def analyze_resume(
     search_provider: str = "",
     search_api_key: str = "",
 ) -> dict:
-    """完整分析流水线，返回结构化结果 dict。"""
+    """完整分析流水线，返回结构化结果 dict。
+
+    返回结构（PRD #9）：{career_profile, recommended_companies, resume_advice, realtime, notice}
+    绝不含任何搜索原始字段。
+    """
     if not llm_api_key:
         raise AnalyzeError("请先在设置中配置 LLM API Key")
 
@@ -106,7 +127,7 @@ def analyze_resume(
     target_role = portrait.get("target_role") or ""
     city = portrait.get("city") or ""
 
-    # 3) 搜索（可选）：先搜公司招聘信息，再对提取到的候选公司追加风险/渠道查询
+    # 3) 搜索（可选）：原始结果只收集为 LLM 素材，绝不外泄
     search_text = ""
     realtime = False
     if search_provider and search_api_key:
@@ -118,7 +139,7 @@ def analyze_resume(
         for q in base_queries:
             collected.extend(search(search_provider, search_api_key, q))
 
-        # 从招聘搜索结果中提取候选公司名（"XX有限公司/集团/科技/网络/信息/股份" 等）
+        # 从招聘搜索结果中提取候选公司名，追加风险/渠道查询
         candidates = _extract_company_names("\n".join(collected))
         logger.info("extracted %d candidate companies from search", len(candidates))
         for name in candidates[:5]:
@@ -129,22 +150,48 @@ def analyze_resume(
         realtime = bool(collected)
         logger.info("search done: %d snippets, realtime=%s", len(collected), realtime)
 
-    # 4) 第二次 LLM 调用：深度蒸馏输出结构化 JSON
+    # 4) 第二次 LLM 调用：公司筛选与风险评估，输出结构化 JSON（素材不外泄）
     result = _chat_json(llm_base_url, llm_api_key, llm_model, [
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": ANALYZE_PROMPT
             .replace("__PORTRAIT__", json.dumps(portrait, ensure_ascii=False))
-            .replace("__SEARCH__", search_text or "（未配置搜索或搜索无结果）")
+            .replace("__SEARCH__", search_text or "（未配置搜索，无搜索素材）")
             .replace("__RESUME__", redacted[:6000])},
     ])
 
+    # 5) 归一化：确保关键字段存在；剥离任何可能残留的原始搜索字段
+    result["career_profile"] = result.get("career_profile") or portrait
+    result["recommended_companies"] = result.get("recommended_companies") or []
+    result["resume_advice"] = result.get("resume_advice") or []
+    for key in ("search_results_raw", "snippets", "organic_results", "search_text", "raw_search"):
+        result.pop(key, None)
     result["realtime"] = realtime
     result["notice"] = (
         ""
         if realtime
         else "当前未配置搜索 API，信息基于模型内部知识，可能滞后，投递渠道等信息建议人工核实"
     )
+    # 防御：LLM 若在文本字段里复读搜索片段（含 URL 的原始摘要），截断为结构化摘要
+    if search_text:
+        _scrub_search_echo(result, search_text)
     return result
+
+
+def _scrub_search_echo(result: dict, search_text: str) -> None:
+    """防御性清洗：若 LLM 把搜索原始片段复制进输出文本字段，替换为结构化说明。
+
+    PRD #9：前端展示的任何内容必须是 LLM 生成的结构化内容，不得是搜索结果的复制粘贴。
+    """
+    # 收集原始片段中较长的行（>40 字符），用于检测复制粘贴
+    raw_lines = [ln.strip() for ln in search_text.splitlines() if len(ln.strip()) > 40]
+    if not raw_lines:
+        return
+    for comp in result.get("recommended_companies") or []:
+        for field in ("recommendation_reason", "note"):
+            val = comp.get(field) or ""
+            if any(rl and rl in val for rl in raw_lines):
+                # 直接替换为结构化说明，绝不保留原始搜索文本
+                comp[field] = "（原始搜索文本已按隐私策略移除，建议通过官方渠道人工核实）"
 
 
 # 公司名提取：懒惰前缀 + 收尾后缀（只保留能作为公司名结尾的尾缀，

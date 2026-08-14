@@ -84,16 +84,16 @@ export default function AnalysisWindow({ status, result, error }: Props) {
           <section>
             <h3 className="mb-2 text-sm font-semibold">🎯 职业画像</h3>
             <p className="text-sm">
-              目标岗位：<b className="text-ink dark:text-gray-100">{result.portrait.target_role}</b>
+              目标岗位：<b className="text-ink dark:text-gray-100">{result.career_profile.target_role}</b>
             </p>
             <div className="mt-1.5 space-y-0.5 text-xs text-muted dark:text-gray-400">
-              {result.portrait.years_experience && <p>经验：{result.portrait.years_experience}</p>}
-              {result.portrait.education && <p>学历：{result.portrait.education}</p>}
-              {result.portrait.city && <p>城市：{result.portrait.city}</p>}
+              {result.career_profile.years_experience && <p>经验：{result.career_profile.years_experience}</p>}
+              {result.career_profile.education && <p>学历：{result.career_profile.education}</p>}
+              {result.career_profile.city && <p>城市：{result.career_profile.city}</p>}
             </div>
-            {result.portrait.skills.length > 0 && (
+            {result.career_profile.skills.length > 0 && (
               <div className="mt-2 flex flex-wrap gap-1.5">
-                {result.portrait.skills.map((s) => (
+                {result.career_profile.skills.map((s) => (
                   <span
                     key={s}
                     className="rounded-full bg-stone-100 px-2.5 py-0.5 text-xs text-stone-700 dark:bg-gray-700 dark:text-gray-200"
@@ -109,7 +109,7 @@ export default function AnalysisWindow({ status, result, error }: Props) {
           <section>
             <h3 className="mb-2 text-sm font-semibold">🏢 推荐公司</h3>
             <div className="space-y-3">
-              {result.companies.map((c, i) => (
+              {result.recommended_companies.map((c, i) => (
                 <div key={i} className="rounded-xl border border-stone-200 p-3 dark:border-gray-700">
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
@@ -120,8 +120,8 @@ export default function AnalysisWindow({ status, result, error }: Props) {
                     </div>
                     <RiskBadge level={c.risk_level} label={c.risk_label} />
                   </div>
-                  {c.recommend_reason && (
-                    <p className="mt-1.5 text-xs text-muted dark:text-gray-400">{c.recommend_reason}</p>
+                  {c.recommendation_reason && (
+                    <p className="mt-1.5 text-xs text-muted dark:text-gray-400">{c.recommendation_reason}</p>
                   )}
                   {/* 投递渠道 */}
                   {c.channels.length > 0 && (
@@ -143,11 +143,11 @@ export default function AnalysisWindow({ status, result, error }: Props) {
                     </div>
                   )}
                   {/* 风险详情 */}
-                  {c.risk_items.length > 0 && (
+                  {c.risk_details.length > 0 && (
                     <ul className="mt-2 space-y-1">
-                      {c.risk_items.map((it, j) => (
+                      {c.risk_details.map((it, j) => (
                         <li key={j} className="text-xs text-muted dark:text-gray-400">
-                          • {it.type}：{it.description}
+                          • {it.description}
                           {it.source_url && (
                             <>
                               {' '}
@@ -160,17 +160,18 @@ export default function AnalysisWindow({ status, result, error }: Props) {
                       ))}
                     </ul>
                   )}
+                  {c.note && <p className="mt-1.5 text-xs text-muted dark:text-gray-500">📌 {c.note}</p>}
                 </div>
               ))}
             </div>
           </section>
 
           {/* STAR 优化建议 */}
-          {result.star_advice.length > 0 && (
+          {result.resume_advice.length > 0 && (
             <section>
               <h3 className="mb-2 text-sm font-semibold">✍️ 简历优化建议（STAR 法则）</h3>
               <div className="space-y-3">
-                {result.star_advice.map((s, i) => (
+                {result.resume_advice.map((s, i) => (
                   <div key={i} className="rounded-xl border border-stone-200 p-3 text-xs dark:border-gray-700">
                     <p className="text-stone-700 dark:text-gray-200">
                       <span className="font-medium">原文：</span>{s.quote}
