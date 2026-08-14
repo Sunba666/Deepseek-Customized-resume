@@ -80,13 +80,19 @@ def recommend(portrait: Portrait, city: str = "", with_star: bool = False) -> Pl
 
 
 def _collect_companies(portrait: Portrait, city: str) -> list[Company]:
-    """从本地库 + mock 收集公司，按行业相关性排序，取 10~20 家。"""
+    """从本地库 + mock 收集公司，按行业相关性排序，取 10~20 家。
+
+    本地库公司优先（真实风险数据），但本地库无投递渠道；为保证每家推荐公司
+    都有投递渠道（PRD 要求），本地公司最多取 10 家，其余由带渠道的 mock 补齐。
+    """
     local = local_db.list_companies()
     companies: list[Company] = []
     used_names: set[str] = set()
 
-    # 本地库公司（is_mock=False）
+    # 本地库公司（is_mock=False），最多 10 家
     for row in local:
+        if len([c for c in companies if not c.is_mock]) >= 10:
+            break
         name = row.get("name") or ""
         if not name or name in used_names:
             continue
@@ -98,10 +104,10 @@ def _collect_companies(portrait: Portrait, city: str) -> list[Company]:
             size="",
             channels=[],
             is_mock=False,
-            recommend_reason="来自本地企业库",
+            recommend_reason="来自本地企业库（含本地信用数据）",
         ))
 
-    # mock 回退（补足到至少 10 家）
+    # mock 回退（补足到至少 12 家，最多 20 家）
     for row in _MOCK_COMPANIES:
         if len(companies) >= 20:
             break
@@ -113,13 +119,22 @@ def _collect_companies(portrait: Portrait, city: str) -> list[Company]:
             channels=[Channel(**c) for c in row["channels"]],
             is_mock=True, recommend_reason=row["recommend_reason"],
         ))
+        if len(companies) >= 12:
+            break
 
-    # 行业相关性排序：画像行业命中靠前；城市命中靠前
+    # 排序：真实本地库公司在前（真实风险数据），mock 在后；
+    # 组内按行业相关性、城市命中排序（注意空串不视为命中）
     def sort_key(c: Company):
-        industry_hit = any(ind in (c.industry or "") for ind in portrait.industries) or \
-                       (c.industry or "") in "".join(portrait.industries)
-        city_hit = city == "不限" or city in (c.city or "")
-        return (0 if industry_hit else 1, 0 if city_hit else 1, c.name)
+        industry_hit = bool(c.industry) and (
+            any(ind in c.industry for ind in portrait.industries) or c.industry in "".join(portrait.industries)
+        )
+        city_hit = city == "不限" or (bool(c.city) and city in c.city)
+        return (
+            1 if c.is_mock else 0,
+            0 if industry_hit else 1,
+            0 if city_hit else 1,
+            c.name,
+        )
 
     companies.sort(key=sort_key)
     return companies[:20]

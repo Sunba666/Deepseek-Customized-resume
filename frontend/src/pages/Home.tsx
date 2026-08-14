@@ -90,12 +90,26 @@ export default function Home() {
 
       {inferred && (
         <section className="rounded-xl border border-stone-200 bg-white p-4 shadow-sm space-y-4">
-          <div>
-            <h2 className="font-medium mb-1">📄 {fileName}（已解析，自动脱敏）</h2>
-            <p className="text-sm text-muted">
-              推断岗位：<b>{inferred.role}</b> · 技能：{inferred.skills.join('、') || '未识别'} · 经验：{inferred.years || '未识别'}
-            </p>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className="font-medium">📄 {fileName}（已解析，自动脱敏）</h2>
+            <button
+              onClick={() => {
+                const blob = new Blob([redactedText], { type: 'text/plain;charset=utf-8' })
+                const a = document.createElement('a')
+                a.href = URL.createObjectURL(blob)
+                a.download = `匿名简历_${fileName}.txt`
+                a.click()
+                URL.revokeObjectURL(a.href)
+              }}
+              className="rounded-lg border border-stone-300 px-3 py-1.5 text-xs hover:border-stone-500"
+              title="导出脱敏后的简历文本，可安全分享"
+            >
+              ⬇ 导出匿名简历
+            </button>
           </div>
+          <p className="text-sm text-muted">
+            推断岗位：<b>{inferred.role}</b> · 技能：{inferred.skills.join('、') || '未识别'} · 经验：{inferred.years || '未识别'}
+          </p>
 
           <div className="grid gap-4 sm:grid-cols-2">
             <label className="block text-sm">
