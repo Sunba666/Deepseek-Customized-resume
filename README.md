@@ -125,6 +125,12 @@ resume-advisor/
 - **PDF 解析不出文本？** 扫描件/图片型 PDF 暂不支持 OCR，请使用文字版 PDF。
 - **后端 8000 端口被占用？** 修改 `backend/.env` 的 `PORT`。
 - **想换 Ollama？** 设置页 Base URL 填 `http://127.0.0.1:11434/v1`，模型名填已下载的模型（如 `qwen2.5:7b`）。
+- **控制台出现 `v[w] is not a function` / VM 前缀报错？** 本应用源码不使用 `onload` 且 dev 模式不压缩，此类带压缩变量名（`v[w]`）的报错来自**第三方注入脚本**（常见名称：`aegisInject`、`SideBar`、`yuke`），多为浏览器扩展或 DNS 层广告劫持注入，与应用无关。排查与隔离：
+  1. 无痕窗口（禁用全部扩展）打开 http://localhost:5173，若报错消失即为扩展注入；逐个禁用扩展定位元凶并卸载。
+  2. 若报错仍存在，检查浏览器代理/网络设置是否有 DNS 层注入，用杀毒软件（如火绒）全盘扫描。
+  3. 代码侧已内置隔离：生产构建自动注入 CSP 元标签，拦截 DOM 注入的内联脚本（`yuke` 等）；扩展 content script 运行于隔离世界，不受页面 CSP 约束，仍需浏览器侧处理。
+- **控制台有 React Router `future` 警告？** 已消除：`main.tsx` 中 `HashRouter` 已设置 `future={{ v7_startTransition: true, v7_relativeSplatPath: true }}`。
+- **控制台有 Permissions-Policy 提示？** 多为浏览器对未声明功能特性的提示，可忽略；Vite 配置已显式关闭本应用不需要的权限（摄像头/麦克风/定位等），正常不再出现。
 
 ## 开源协议
 
