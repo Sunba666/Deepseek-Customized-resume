@@ -11,6 +11,7 @@ export default function Home() {
   const [error, setError] = useState('')
 
   const [fileName, setFileName] = useState('')
+  const [fileSize, setFileSize] = useState(0)
   const [redactedText, setRedactedText] = useState('')
   const [inferred, setInferred] = useState<{ role: string; skills: string[]; years: string } | null>(null)
 
@@ -27,6 +28,7 @@ export default function Home() {
     try {
       const r = await parseResume(file)
       setFileName(r.filename)
+      setFileSize(file.size)
       setRedactedText(r.redacted_text)
       setInferred({
         role: r.preview.inferred_role,
@@ -39,6 +41,17 @@ export default function Home() {
     } finally {
       setParsing(false)
     }
+  }
+
+  const handleRemove = () => {
+    setFileName('')
+    setFileSize(0)
+    setRedactedText('')
+    setInferred(null)
+    setPortrait(null)
+    setTargetRole('')
+    setCity('')
+    setError('')
   }
 
   const handleGenerate = async () => {
@@ -80,7 +93,13 @@ export default function Home() {
         </p>
       </section>
 
-      <UploadZone onFile={handleFile} loading={parsing} />
+      <UploadZone
+        onFile={handleFile}
+        onRemove={handleRemove}
+        loading={parsing}
+        fileName={fileName}
+        fileSize={fileSize}
+      />
 
       {error && (
         <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
@@ -91,7 +110,7 @@ export default function Home() {
       {inferred && (
         <section className="rounded-xl border border-stone-200 bg-white p-4 shadow-sm space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <h2 className="font-medium">📄 {fileName}（已解析，自动脱敏）</h2>
+            <h2 className="font-medium">✅ 解析完成，请确认以下信息</h2>
             <button
               onClick={() => {
                 const blob = new Blob([redactedText], { type: 'text/plain;charset=utf-8' })
@@ -156,6 +175,11 @@ export default function Home() {
       {portrait && !generating && (
         <p className="text-xs text-muted">职业画像已生成：{portrait.summary}</p>
       )}
+
+      {/* 隐私提示 */}
+      <p className="border-t border-stone-200 pt-4 text-xs text-muted">
+        本地运行 · 简历与报告不上传任何服务器 · 数据默认脱敏
+      </p>
     </div>
   )
 }

@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import CompanyCard from '../components/CompanyCard'
 import STARAdvice from '../components/STARAdvice'
-import { exportMarkdown } from '../api'
+import { exportMarkdown, loadSettings } from '../api'
 import type { Plan } from '../types'
 
 export default function Result() {
@@ -30,14 +30,16 @@ export default function Result() {
     setExporting(true)
     setDone('')
     try {
-      const { markdown, filename } = await exportMarkdown(plan, true)
+      // 遵循设置页「默认开启本地脱敏」开关
+      const redacted = loadSettings().redact_by_default
+      const { markdown, filename } = await exportMarkdown(plan, redacted)
       const blob = new Blob([markdown], { type: 'text/markdown;charset=utf-8' })
       const a = document.createElement('a')
       a.href = URL.createObjectURL(blob)
       a.download = filename
       a.click()
       URL.revokeObjectURL(a.href)
-      setDone('Markdown 已导出（默认脱敏）。PDF 请点「打印」→ 目标选「另存为 PDF」。')
+      setDone(`Markdown 已导出${redacted ? '（已脱敏）' : ''}。PDF 请点「打印」→ 目标选「另存为 PDF」。`)
     } catch (e) {
       setDone(e instanceof Error ? e.message : '导出失败')
     } finally {

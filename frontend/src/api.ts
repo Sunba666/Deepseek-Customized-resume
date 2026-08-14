@@ -1,4 +1,7 @@
-// 与后端通信的 API 封装（开发模式经 Vite proxy 转发到 127.0.0.1:8000）
+// 与后端通信的 API 封装
+// 基础路径可配置：默认相对路径 /api（开发模式经 Vite proxy 转发到 127.0.0.1:8000，
+// 生产模式由 FastAPI 同源托管）。可用环境变量 VITE_API_BASE 或 localStorage 的
+// ra_api_base 覆盖为绝对地址（如 http://localhost:8000/api）。
 import type {
   Plan,
   Portrait,
@@ -7,7 +10,20 @@ import type {
   StarSuggestion,
 } from './types'
 
-const BASE = '/api'
+function resolveBase(): string {
+  const stored = (() => {
+    try {
+      return localStorage.getItem('ra_api_base') || ''
+    } catch {
+      return ''
+    }
+  })()
+  const fromEnv = import.meta.env?.VITE_API_BASE as string | undefined
+  const base = stored || fromEnv || '/api'
+  return base.endsWith('/') ? base.slice(0, -1) : base
+}
+
+const BASE = resolveBase()
 
 async function post<T>(path: string, body?: unknown): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
@@ -65,26 +81,44 @@ export function health(): Promise<Settings & { status: string }> {
   return fetch(`${BASE}/health`).then((r) => r.json())
 }
 
-export function saveSettings(settings: {
+// ---------- 设置（仅本地存储，后端不保存任何用户配置） ----------
+
+export interface AppSettings {
   llm_base_url: string
   llm_api_key: string
   llm_model: string
-}): Promise<{ ok: boolean }> {
-  // 本地优先：设置仅保存到 localStorage（后端不存储任何用户配置）
-  localStorage.setItem('ra_settings', JSON.stringify(settings))
+  qcc_api_key: string
+  tianyancha_api_key: string
+  redact_by_default: boolean
+}
+
+export const DEFAULT_SETTINGS: AppSettings = {
+  llm_base_url: 'https://api.deepseek.com',
+  llm_api_key: '',
+  llm_model: 'deepseek-chat',
+  qcc_api_key: '',
+  tianyancha_api_key: '',
+  redact_by_default: true,
+}
+
+const SETTINGS_KEY = 'ra_settings'
+
+export function saveSettings(settings: AppSettings): Promise<{ ok: boolean }> {
+  localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings))
   return Promise.resolve({ ok: true })
 }
 
-export function loadSettings(): {
-  llm_base_url: string
-  llm_api_key: string
-  llm_model: string
-} {
+export function loadSettings(): AppSettings {
   try {
-    const raw = localStorage.getItem('ra_settings')
-    if (raw) return JSON.parse(raw)
+    const raw = localStorage.getItem(SETTINGS_KEY)
+    if (raw) return { ...DEFAULT_SETTINGS, ...JSON.parse(raw) }
   } catch {
     /* ignore */
   }
-  return { llm_base_url: 'https://api.deepseek.com', llm_api_key: '', llm_model: 'deepseek-chat' }
+  return { ...DEFAULT_SETTINGS }
+}
+
+export function resetSettings(): AppSettings {
+  localStorage.removeItem(SETTINGS_KEY)
+  return { ...DEFAULT_SETTINGS }
 }
