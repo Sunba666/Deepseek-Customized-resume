@@ -1,185 +1,169 @@
-import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useEffect, useRef, useState } from 'react'
 import UploadZone from '../components/UploadZone'
-import { generatePortrait, parseResume, recommend } from '../api'
-import type { Plan, Portrait } from '../types'
+import { parseResume } from '../api'
+
+interface AnalysisState {
+  status: 'idle' | 'uploading' | 'analyzing' | 'done'
+  fileName?: string
+  fileSize?: number
+  inferred?: { role: string; skills: string[]; years: string }
+  text?: string
+  error?: string
+}
 
 export default function Home() {
-  const navigate = useNavigate()
-  const [parsing, setParsing] = useState(false)
-  const [generating, setGenerating] = useState(false)
-  const [error, setError] = useState('')
+  const [state, setState] = useState<AnalysisState>({ status: 'idle' })
+  const timerRef = useRef<number | null>(null)
 
-  const [fileName, setFileName] = useState('')
-  const [fileSize, setFileSize] = useState(0)
-  const [redactedText, setRedactedText] = useState('')
-  const [inferred, setInferred] = useState<{ role: string; skills: string[]; years: string } | null>(null)
-
-  const [targetRole, setTargetRole] = useState('')
-  const [city, setCity] = useState('')
-  const [withStar, setWithStar] = useState(false)
-  const [portrait, setPortrait] = useState<Portrait | null>(null)
+  // 组件卸载时清理模拟分析定时器
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) window.clearTimeout(timerRef.current)
+    }
+  }, [])
 
   const handleFile = async (file: File) => {
-    setError('')
-    setParsing(true)
-    setPortrait(null)
-    setInferred(null)
+    // 清理上一次的模拟分析定时器
+    if (timerRef.current) window.clearTimeout(timerRef.current)
+    setState({ status: 'uploading', fileName: file.name, fileSize: file.size })
     try {
+      // 保留后端能力：真实解析（脱敏 + 画像推断）
       const r = await parseResume(file)
-      setFileName(r.filename)
-      setFileSize(file.size)
-      setRedactedText(r.redacted_text)
-      setInferred({
-        role: r.preview.inferred_role,
-        skills: r.preview.skills,
-        years: r.preview.years_experience,
+      setState({
+        status: 'analyzing',
+        fileName: file.name,
+        fileSize: file.size,
+        inferred: {
+          role: r.preview.inferred_role,
+          skills: r.preview.skills,
+          years: r.preview.years_experience,
+        },
+        text: r.redacted_text,
       })
-      setTargetRole(r.preview.inferred_role)
+      // 模拟 AI 深度分析延迟
+      timerRef.current = window.setTimeout(() => {
+        setState((prev) => ({ ...prev, status: 'done' }))
+      }, 1500)
     } catch (e) {
-      setError(e instanceof Error ? e.message : '解析失败')
-    } finally {
-      setParsing(false)
+      setState({
+        status: 'idle',
+        fileName: file.name,
+        error: e instanceof Error ? e.message : '解析失败',
+      })
     }
   }
 
   const handleRemove = () => {
-    setFileName('')
-    setFileSize(0)
-    setRedactedText('')
-    setInferred(null)
-    setPortrait(null)
-    setTargetRole('')
-    setCity('')
-    setError('')
-  }
-
-  const handleGenerate = async () => {
-    if (!redactedText) {
-      setError('请先上传简历')
-      return
-    }
-    setError('')
-    setGenerating(true)
-    try {
-      // 1) 生成/确认职业画像
-      const p = await generatePortrait({
-        redacted_text: redactedText,
-        target_role: targetRole,
-        city,
-      })
-      setPortrait(p)
-      // 2) 生成完整方案（含 STAR 建议，若开启）
-      const plan = await recommend({
-        portrait: p,
-        city,
-        with_star: withStar,
-        resume_text: redactedText,
-      })
-      navigate('/result', { state: { plan } })
-    } catch (e) {
-      setError(e instanceof Error ? e.message : '生成失败')
-    } finally {
-      setGenerating(false)
-    }
+    if (timerRef.current) window.clearTimeout(timerRef.current)
+    setState({ status: 'idle' })
   }
 
   return (
-    <div className="space-y-6">
-      <section>
-        <h1 className="text-2xl font-semibold mb-1">生成定制化求职方案</h1>
-        <p className="text-sm text-muted">
-          上传简历 → 确认岗位画像 → 获得公司推荐、风险核验与投递渠道
-        </p>
+    <div className="grid gap-6 lg:grid-cols-2">
+      {/* 左栏：简历上传区 */}
+      <section className="lg:h-[calc(100vh-10rem)] lg:overflow-y-auto">
+        <h2 className="mb-3 text-sm font-medium text-muted dark:text-gray-400">简历上传</h2>
+        <UploadZone
+          onFile={handleFile}
+          onRemove={handleRemove}
+          loading={state.status === 'uploading' || state.status === 'analyzing'}
+          fileName={state.fileName}
+          fileSize={state.fileSize}
+        />
+        {state.error && (
+          <p className="mt-2 rounded-lg border border-red-200 bg-red-50 p-2 text-xs text-red-700 dark:border-red-800 dark:bg-red-900/30 dark:text-red-300">
+            {state.error}
+          </p>
+        )}
       </section>
 
-      <UploadZone
-        onFile={handleFile}
-        onRemove={handleRemove}
-        loading={parsing}
-        fileName={fileName}
-        fileSize={fileSize}
-      />
-
-      {error && (
-        <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-          {error}
+      {/* 右栏：AI 分析窗口 */}
+      <section className="rounded-2xl border border-stone-200 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-800 lg:h-[calc(100vh-10rem)] lg:overflow-y-auto">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-sm font-medium text-muted dark:text-gray-400">AI 分析</h2>
+          {state.status === 'done' && (
+            <span className="rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
+              分析完成
+            </span>
+          )}
         </div>
-      )}
 
-      {inferred && (
-        <section className="rounded-xl border border-stone-200 bg-white p-4 shadow-sm space-y-4">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <h2 className="font-medium">✅ 解析完成，请确认以下信息</h2>
-            <button
-              onClick={() => {
-                const blob = new Blob([redactedText], { type: 'text/plain;charset=utf-8' })
-                const a = document.createElement('a')
-                a.href = URL.createObjectURL(blob)
-                a.download = `匿名简历_${fileName}.txt`
-                a.click()
-                URL.revokeObjectURL(a.href)
-              }}
-              className="rounded-lg border border-stone-300 px-3 py-1.5 text-xs hover:border-stone-500"
-              title="导出脱敏后的简历文本，可安全分享"
-            >
-              ⬇ 导出匿名简历
-            </button>
+        {state.status === 'idle' && (
+          <div className="flex h-64 flex-col items-center justify-center text-center text-muted dark:text-gray-400">
+            <div className="text-4xl mb-3">🤖</div>
+            <p className="text-sm">上传简历后自动开始分析</p>
           </div>
-          <p className="text-sm text-muted">
-            推断岗位：<b>{inferred.role}</b> · 技能：{inferred.skills.join('、') || '未识别'} · 经验：{inferred.years || '未识别'}
-          </p>
+        )}
 
-          <div className="grid gap-4 sm:grid-cols-2">
-            <label className="block text-sm">
-              <span className="text-muted">目标岗位（可修改）</span>
-              <input
-                value={targetRole}
-                onChange={(e) => setTargetRole(e.target.value)}
-                className="mt-1 w-full rounded-lg border border-stone-300 px-3 py-2 text-sm focus:outline-none focus:border-stone-500"
-                placeholder="如：数据分析师-偏业务方向"
-              />
-            </label>
-            <label className="block text-sm">
-              <span className="text-muted">期望城市（可选）</span>
-              <input
-                value={city}
-                onChange={(e) => setCity(e.target.value)}
-                className="mt-1 w-full rounded-lg border border-stone-300 px-3 py-2 text-sm focus:outline-none focus:border-stone-500"
-                placeholder="如：北京 / 上海 / 不限"
-              />
-            </label>
+        {state.status === 'uploading' && (
+          <div className="flex h-64 flex-col items-center justify-center text-center">
+            <div className="mb-3 h-8 w-8 animate-spin rounded-full border-2 border-stone-300 border-t-stone-900 dark:border-gray-600 dark:border-t-gray-100" />
+            <p className="text-sm text-muted dark:text-gray-400">解析中…</p>
           </div>
+        )}
 
-          <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
-            <input
-              type="checkbox"
-              checked={withStar}
-              onChange={(e) => setWithStar(e.target.checked)}
-              className="accent-stone-900"
-            />
-            分析简历并给出优化建议（基于 STAR 法则）
-            <span className="text-xs text-muted">默认关闭</span>
-          </label>
+        {state.status === 'analyzing' && (
+          <div className="flex h-64 flex-col items-center justify-center text-center">
+            <div className="mb-3 h-8 w-8 animate-spin rounded-full border-2 border-stone-300 border-t-stone-900 dark:border-gray-600 dark:border-t-gray-100" />
+            <p className="text-sm text-muted dark:text-gray-400">正在分析…</p>
+          </div>
+        )}
 
-          <button
-            onClick={handleGenerate}
-            disabled={generating}
-            className="w-full rounded-lg bg-stone-900 py-2.5 text-sm font-medium text-white hover:bg-stone-700 disabled:opacity-50"
-          >
-            {generating ? '生成中…' : '生成方案'}
-          </button>
-        </section>
-      )}
+        {state.status === 'done' && state.inferred && (
+          <div className="space-y-4">
+            {/* 岗位画像 */}
+            <div>
+              <h3 className="mb-2 text-sm font-semibold">🎯 岗位画像</h3>
+              <p className="text-sm">
+                目标岗位：<b className="text-ink dark:text-gray-100">{state.inferred.role}</b>
+              </p>
+              {state.inferred.years && (
+                <p className="mt-1 text-xs text-muted dark:text-gray-400">
+                  经验：{state.inferred.years}
+                </p>
+              )}
+              {state.inferred.skills.length > 0 && (
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {state.inferred.skills.map((s) => (
+                    <span
+                      key={s}
+                      className="rounded-full bg-stone-100 px-2.5 py-0.5 text-xs text-stone-700 dark:bg-gray-700 dark:text-gray-200"
+                    >
+                      {s}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
 
-      {portrait && !generating && (
-        <p className="text-xs text-muted">职业画像已生成：{portrait.summary}</p>
-      )}
+            {/* 模拟 AI 分析结果 */}
+            <div className="rounded-xl bg-stone-50 p-4 text-sm leading-relaxed text-stone-700 dark:bg-gray-900/50 dark:text-gray-300">
+              <p className="mb-2 font-medium text-ink dark:text-gray-100">📊 AI 深度分析（模拟数据）</p>
+              <ul className="list-disc space-y-1.5 pl-4">
+                <li>
+                  <b>匹配方向</b>：您的经历与「{state.inferred.role}」高度相关，建议优先投递该方向的
+                  数据/业务团队。
+                </li>
+                <li>
+                  <b>技能亮点</b>：{state.inferred.skills.slice(0, 3).join('、') || '未识别到明确技能'}，
+                  与岗位要求匹配度良好。
+                </li>
+                <li>
+                  <b>优化建议</b>：建议在经历描述中补充量化成果（如「效率提升 X% / 覆盖用户 Y 万」），
+                  并突出个人贡献角色。
+                </li>
+                <li>
+                  <b>风险提示</b>：本分析为演示数据，接入 LLM API Key 后可获得更深入的针对性建议。
+                </li>
+              </ul>
+            </div>
 
-      {/* 隐私提示 */}
-      <p className="border-t border-stone-200 pt-4 text-xs text-muted">
-        本地运行 · 简历与报告不上传任何服务器 · 数据默认脱敏
-      </p>
+            <p className="text-xs text-muted dark:text-gray-500">
+              已按脱敏规则隐藏手机号/邮箱/身份证/住址；完整解析文本仅保存在本地。
+            </p>
+          </div>
+        )}
+      </section>
     </div>
   )
 }

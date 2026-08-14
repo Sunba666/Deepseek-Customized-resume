@@ -2,8 +2,9 @@
 @tailwind components;
 @tailwind utilities;
 
+/* 浅色/深色背景与文字（深色模式由 <html class="dark"> 触发） */
 body {
-  @apply bg-paper text-ink antialiased;
+  @apply bg-paper text-ink antialiased dark:bg-gray-900 dark:text-gray-100;
   font-family: 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
 }
 
