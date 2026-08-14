@@ -28,3 +28,4 @@ src-tauri/target/
 .idea/
 .DS_Store
 nul
+*.tsbuildinfo
