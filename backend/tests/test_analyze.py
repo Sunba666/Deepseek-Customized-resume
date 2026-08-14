@@ -48,16 +48,19 @@ def _mock_llm(monkeypatch):
                 "education": "本科",
                 "city": "北京",
             },
-            "companies": [{
-                "name": "测试数据科技",
-                "city": "北京",
-                "industry": "互联网",
-                "risk_level": "normal",
-                "risk_label": "🟢 正常",
-                "recommend_reason": "匹配岗位",
-                "channels": [{"name": "官网", "url": "https://example.com"}],
-                "risk_items": [],
-            }],
+            "companies": [
+                {
+                    "name": f"真实科技{i}",
+                    "city": "北京",
+                    "industry": "互联网",
+                    "risk_level": "normal",
+                    "risk_label": "🟢 正常",
+                    "recommend_reason": f"匹配岗位 {i}",
+                    "channels": [{"name": "官网", "url": f"https://example.com/{i}"}],
+                    "risk_items": [],
+                }
+                for i in range(6)  # 6 家，处于 5~15 区间
+            ],
             "star_advice": [{
                 "quote": "负责用户增长数据分析",
                 "problem": "缺少量化",
@@ -96,13 +99,15 @@ def test_analyze_no_search_marks_non_realtime():
     body = r.json()
     assert body["realtime"] is False
     assert "未配置搜索" in body["notice"]
+    assert "建议人工核实" in body["notice"]
     assert body["portrait"]["target_role"] == "数据分析师-偏业务方向"
-    assert len(body["companies"]) == 1
+    # 5~15 家公司（LLM 动态生成，非静态列表）
+    assert 5 <= len(body["companies"]) <= 15
     assert len(body["star_advice"]) == 1
 
 
 def test_analyze_with_search_realtime(monkeypatch):
-    monkeypatch.setattr(analyzer, "search", lambda provider, key, query, max_results=5: ["某公司 招聘信息 [https://x.com]"])
+    monkeypatch.setattr(analyzer, "search", lambda provider, key, query, max_results=5: ["字节跳动有限公司 招聘 数据分析师 [https://jobs.bytedance.com]"])
     r = _post({
         "llm_api_key": "sk-test",
         "search_provider": "serper",
@@ -112,6 +117,16 @@ def test_analyze_with_search_realtime(monkeypatch):
     body = r.json()
     assert body["realtime"] is True
     assert body["notice"] == ""
+
+
+def test_extract_company_names():
+    text = "字节跳动有限公司 招聘数据分析师；腾讯科技（深圳）有限公司 也在招人；某某网络科技有限公司 欢迎投递"
+    names = analyzer._extract_company_names(text)
+    assert "字节跳动有限公司" in names
+    assert "某某网络科技有限公司" in names
+    # 去重
+    text2 = "字节跳动有限公司 与 字节跳动有限公司 都招人"
+    assert analyzer._extract_company_names(text2).count("字节跳动有限公司") == 1
 
 
 def test_analyze_rejects_bad_ext():

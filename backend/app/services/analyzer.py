@@ -7,6 +7,7 @@ PRD 要求（PRD #7）：
 """
 import json
 import logging
+import re
 from pathlib import Path
 from typing import Optional
 
@@ -42,10 +43,14 @@ ANALYZE_PROMPT = (
     '  "star_advice": [{"quote":"简历原文","problem":"问题","situation":"S","task":"T","action":"A","result":"R",'
     '"rewrite":"优化示例"}]\n'
     '}\n'
-    "约束：\n"
-    "- 只能基于简历与搜索结果，不得编造公司、风险或渠道信息；\n"
-    "- 风险结论必须附来源 URL；数据不足标注「未知」，禁止编造；\n"
-    "- 推荐 3~8 家公司；\n"
+    "核心要求：\n"
+    "- 推荐公司必须由你基于简历画像与搜索结果【自行推理生成 5~15 家】，必须是【真实存在】的公司，"
+    "严禁虚构、严禁从任何预置列表读取；\n"
+    "- 若提供了搜索结果：优先从搜索结果中提炼真实公司与招聘信息，再结合自身知识补充推荐理由与投递渠道；\n"
+    "- 若未提供搜索结果：基于自身知识生成真实公司，并附上可验证的投递渠道"
+    "（官网招聘页、公开邮箱、招聘平台链接等），同时明确标注「信息可能滞后，建议人工核实」；\n"
+    "- 每家公司的风险等级基于已知信息评估，风险说明须附证据链接（如有）；无证据时 risk_items 留空、"
+    "risk_level 标注 unknown；\n"
     "- 简历优化建议基于原文，使用 STAR 法则，不得凭空添加经历。\n"
     "简历画像：\n__PORTRAIT__\n"
     "搜索结果（可能为空）：\n__SEARCH__\n"
@@ -101,25 +106,26 @@ def analyze_resume(
     target_role = portrait.get("target_role") or ""
     city = portrait.get("city") or ""
 
-    # 3) 搜索（可选）
+    # 3) 搜索（可选）：先搜公司招聘信息，再对提取到的候选公司追加风险/渠道查询
     search_text = ""
     realtime = False
     if search_provider and search_api_key:
-        queries = [
-            f"{target_role} 招聘 公司 {city}".strip(),
-            f"{target_role} 招聘 公司",
-        ]
         collected: list[str] = []
-        for q in queries:
-            if not q:
-                continue
+        base_queries = [
+            f"{target_role} 招聘 公司 {city}".strip() or f"{target_role} 招聘 公司",
+            f"{city} {target_role} 知名公司".strip() or f"{target_role} 招聘 公司",
+        ]
+        for q in base_queries:
             collected.extend(search(search_provider, search_api_key, q))
-        # 风险与渠道查询（仅当已有目标公司名时）
-        companies_found = [c.get("name") for c in portrait.get("companies") or []]
-        for name in companies_found[:3]:
+
+        # 从招聘搜索结果中提取候选公司名（"XX有限公司/集团/科技/网络/信息/股份" 等）
+        candidates = _extract_company_names("\n".join(collected))
+        logger.info("extracted %d candidate companies from search", len(candidates))
+        for name in candidates[:5]:
             collected.extend(search(search_provider, search_api_key, f"{name} 劳动仲裁 欠薪 失信"))
             collected.extend(search(search_provider, search_api_key, f"{name} 官网 招聘 投递渠道"))
-        search_text = "\n".join(collected[:30])[:8000]
+
+        search_text = "\n".join(collected[:40])[:10000]
         realtime = bool(collected)
         logger.info("search done: %d snippets, realtime=%s", len(collected), realtime)
 
@@ -136,6 +142,32 @@ def analyze_resume(
     result["notice"] = (
         ""
         if realtime
-        else "当前未配置搜索 API，信息基于模型内部知识，可能滞后"
+        else "当前未配置搜索 API，信息基于模型内部知识，可能滞后，投递渠道等信息建议人工核实"
     )
     return result
+
+
+# 公司名提取：懒惰前缀 + 收尾后缀（只保留能作为公司名结尾的尾缀，
+# 避免「网络科技/科技集团」等组合把 XX有限公司 拦腰截断）
+_COMPANY_RE = re.compile(
+    r"([\u4e00-\u9fa5A-Za-z0-9]{2,24}?"
+    r"(?:有限责任公司|股份有限公司|有限公司|集团|股份))"
+)
+
+# 明显非公司名的噪音词
+_NOISE = ("招聘", "招人", "欢迎", "科技公司招聘", "公司招聘")
+
+
+def _extract_company_names(text: str) -> list[str]:
+    """从文本中提取去重后的候选公司名（去重保序，剔除常见噪音词）。"""
+    names: list[str] = []
+    seen: set[str] = set()
+    for m in _COMPANY_RE.finditer(text):
+        name = m.group(1).strip()
+        if len(name) < 4 or name in seen:
+            continue
+        if any(n in name for n in _NOISE):
+            continue
+        seen.add(name)
+        names.append(name)
+    return names

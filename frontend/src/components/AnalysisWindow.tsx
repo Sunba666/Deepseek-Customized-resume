@@ -56,7 +56,7 @@ export default function AnalysisWindow({ status, result, error }: Props) {
         <div className="flex h-64 flex-col items-center justify-center text-center">
           <div className="mb-3 h-8 w-8 animate-spin rounded-full border-2 border-stone-300 border-t-stone-900 dark:border-gray-600 dark:border-t-gray-100" />
           <p className="text-sm text-muted dark:text-gray-400">正在深度分析中…</p>
-          <p className="mt-1 text-xs text-muted dark:text-gray-500">调用 LLM 处理中，可能需要数十秒</p>
+          <p className="mt-1 text-xs text-muted dark:text-gray-400">调用 LLM 处理中，可能需要数十秒</p>
         </div>
       )}
 
@@ -65,7 +65,7 @@ export default function AnalysisWindow({ status, result, error }: Props) {
         <div className="flex h-64 flex-col items-center justify-center text-center">
           <div className="text-3xl mb-3">⚠️</div>
           <p className="text-sm text-red-600 dark:text-red-400">{error || '分析失败'}</p>
-          <p className="mt-2 text-xs text-muted dark:text-gray-500">
+          <p className="mt-2 text-xs text-muted dark:text-gray-400">
             请检查设置中的 LLM API Key 与网络连接后重试
           </p>
         </div>
