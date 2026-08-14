@@ -1,0 +1,1 @@
+{"root":["./src/app.tsx","./src/api.ts","./src/main.tsx","./src/types.ts","./src/vite-env.d.ts","./src/components/companycard.tsx","./src/components/riskbadge.tsx","./src/components/staradvice.tsx","./src/components/uploadzone.tsx","./src/pages/home.tsx","./src/pages/result.tsx","./src/pages/settings.tsx"],"version":"5.9.3"}

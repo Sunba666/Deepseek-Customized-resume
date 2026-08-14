@@ -1,0 +1,30 @@
+# 依赖
+backend/.venv/
+__pycache__/
+*.pyc
+
+# 环境与密钥
+.env
+backend/.env
+
+# 本地真实数据（复用 Company-lookup 的库，不进仓库）
+*.db
+*.sqlite
+*.sqlite3
+
+# 上传的临时文件
+backend/tmp/
+tmp/
+
+# 前端
+frontend/node_modules/
+frontend/dist/
+
+# Tauri 构建产物
+src-tauri/target/
+
+# 工具
+.vscode/
+.idea/
+.DS_Store
+nul
