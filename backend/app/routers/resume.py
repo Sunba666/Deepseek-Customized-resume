@@ -4,6 +4,8 @@
 """
 import logging
 
+from starlette.concurrency import run_in_threadpool
+
 from fastapi import APIRouter, File, HTTPException, UploadFile
 
 from ..models.schemas import PortraitRequest, ResumeParseResult
@@ -17,19 +19,18 @@ router = APIRouter(prefix="/api/resume", tags=["resume"])
 @router.post("/parse", response_model=ResumeParseResult)
 async def parse_resume(file: UploadFile = File(...)):
     """上传简历（PDF/DOCX/TXT），返回脱敏文本与预览。"""
-    data = await file.read()
-    if not data:
-        raise HTTPException(400, "上传文件为空")
     try:
-        path = file_handler.save_upload(file.filename or "resume.txt", data)
+        data = await file_handler.read_upload(file)
+        path = await run_in_threadpool(file_handler.save_upload, file.filename or "resume.txt", data)
+    except file_handler.UploadTooLargeError as e:
+        raise HTTPException(413, str(e)) from e
     except ValueError as e:
-        raise HTTPException(400, str(e))
+        raise HTTPException(400, str(e)) from e
 
     try:
-        text = parser.extract_text(path)
+        text = await run_in_threadpool(parser.extract_text, path)
     except ValueError as e:
-        file_handler.cleanup(path)
-        raise HTTPException(400, str(e))
+        raise HTTPException(400, str(e)) from e
     finally:
         file_handler.cleanup(path)
 

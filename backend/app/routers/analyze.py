@@ -4,6 +4,8 @@
 """
 import logging
 
+from starlette.concurrency import run_in_threadpool
+
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 
 from ..services import analyzer
@@ -23,16 +25,17 @@ async def analyze(
     search_api_key: str = Form(""),
 ):
     """上传简历并返回结构化分析结果（职业画像 / 公司推荐 / STAR 建议）。"""
-    data = await file.read()
-    if not data:
-        raise HTTPException(400, "上传文件为空")
     try:
-        path = file_handler.save_upload(file.filename or "resume.txt", data)
+        data = await file_handler.read_upload(file)
+        path = await run_in_threadpool(file_handler.save_upload, file.filename or "resume.txt", data)
+    except file_handler.UploadTooLargeError as e:
+        raise HTTPException(413, str(e)) from e
     except ValueError as e:
-        raise HTTPException(400, str(e))
+        raise HTTPException(400, str(e)) from e
 
     try:
-        result = analyzer.analyze_resume(
+        result = await run_in_threadpool(
+            analyzer.analyze_resume,
             file_path=path,
             llm_base_url=llm_base_url.strip() or "https://api.openai.com/v1",
             llm_api_key=llm_api_key.strip(),
@@ -45,6 +48,6 @@ async def analyze(
         raise HTTPException(400, str(e))
     except Exception as e:  # LLM/网络等异常统一转为 502，避免泄漏细节
         logger.exception("analyze failed")
-        raise HTTPException(502, f"分析失败：{e}")
+        raise HTTPException(502, "分析服务暂时不可用，请检查 API 配置或稍后重试") from e
     finally:
         file_handler.cleanup(path)

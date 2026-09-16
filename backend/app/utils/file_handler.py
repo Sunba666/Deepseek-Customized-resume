@@ -14,6 +14,21 @@ from ..config import get_settings
 logger = logging.getLogger(__name__)
 
 ALLOWED_EXTENSIONS = {".pdf", ".docx", ".txt"}
+MAX_UPLOAD_BYTES = 10 * 1024 * 1024
+
+
+class UploadTooLargeError(ValueError):
+    """上传内容超出内存处理上限。"""
+
+
+async def read_upload(file) -> bytes:
+    """最多读取上限加一字节，避免将超大文件完整载入内存。"""
+    data = await file.read(MAX_UPLOAD_BYTES + 1)
+    if len(data) > MAX_UPLOAD_BYTES:
+        raise UploadTooLargeError("文件不能超过 10 MB")
+    if not data:
+        raise ValueError("上传文件为空")
+    return data
 
 _tmp_root = Path(tempfile.gettempdir()) / "resume-advisor"
 
@@ -24,6 +39,8 @@ def _settings():
 
 def save_upload(filename: str, data: bytes) -> Path:
     """保存上传文件到临时目录，返回路径。校验扩展名白名单。"""
+    if len(data) > MAX_UPLOAD_BYTES:
+        raise UploadTooLargeError("文件不能超过 10 MB")
     ext = Path(filename).suffix.lower()
     if ext not in ALLOWED_EXTENSIONS:
         raise ValueError(f"不支持的文件类型: {ext or '(无扩展名)'}，仅支持 PDF / DOCX / TXT")

@@ -53,3 +53,22 @@ React 18 + TypeScript + Tailwind（前端）· Python + FastAPI（后端）
 ## 协议
 
 MIT
+
+## 上传与稳定性更新（2026-09-16）
+
+- PDF / DOCX / TXT 单个文件上限为 10 MB，前后端均校验大小。
+- 空白文件、损坏文档返回可读错误，处理失败也会清理临时文件。
+- 简历解析和深度分析在线程池中运行，分析等待期间健康检查仍可响应。
+- 上游异常详情不会直接返回给浏览器。
+
+### 验证
+
+```powershell
+# 在 backend 目录运行；先按快速开始安装依赖
+.venv/Scripts/python -m pytest tests -q
+```
+
+21 项测试覆盖解析、脱敏、分析、上传大小、损坏文件、临时文件清理及分析期间健康检查的并发响应。
+测试中的 LLM 和搜索服务使用模拟响应，不需要真实 API Key。
+
+在 `frontend` 目录执行 `npm run build`，完成 TypeScript 检查和生产构建。

@@ -74,6 +74,7 @@ def _mock_llm(monkeypatch):
         }
 
     monkeypatch.setattr(analyzer, "_chat_json", fake_chat)
+    monkeypatch.setattr(analyzer, "search", lambda *args, **kwargs: [])
 
 
 def _post(extra: dict | None = None):

@@ -12,13 +12,19 @@ logger = logging.getLogger(__name__)
 def extract_text(path: Path) -> str:
     """按扩展名提取文本，返回去空白后的文本。"""
     ext = path.suffix.lower()
-    if ext == ".pdf":
-        return _extract_pdf(path)
-    if ext == ".docx":
-        return _extract_docx(path)
-    if ext == ".txt":
-        return _extract_txt(path)
-    raise ValueError(f"不支持的文件类型: {ext}")
+    readers = {".pdf": _extract_pdf, ".docx": _extract_docx, ".txt": _extract_txt}
+    if ext not in readers:
+        raise ValueError(f"不支持的文件类型: {ext}")
+    try:
+        text = readers[ext](path).strip()
+    except ValueError:
+        raise
+    except Exception as exc:
+        logger.warning("resume parsing failed (%s): %s", ext, type(exc).__name__)
+        raise ValueError("文件无法解析，请确认文件未损坏、未加密，并使用 PDF / DOCX / TXT 格式") from exc
+    if not text:
+        raise ValueError("简历中没有可提取的文本，请上传包含文字的文件")
+    return text
 
 
 def _extract_pdf(path: Path) -> str:
@@ -53,7 +59,7 @@ def _extract_docx(path: Path) -> str:
 def _extract_txt(path: Path) -> str:
     # 尝试常见编码，兜底 GBK
     raw = path.read_bytes()
-    for enc in ("utf-8", "utf-8-sig", "gbk", "gb18030", "big5"):
+    for enc in ("utf-8-sig", "gb18030", "big5"):
         try:
             return raw.decode(enc)
         except UnicodeDecodeError:

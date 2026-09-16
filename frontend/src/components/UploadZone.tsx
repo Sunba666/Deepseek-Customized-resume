@@ -9,6 +9,7 @@ interface Props {
 }
 
 const ALLOWED = ['.pdf', '.docx', '.txt']
+const MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 
 function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`
@@ -27,6 +28,10 @@ export default function UploadZone({ onFile, onRemove, loading, fileName, fileSi
       const ext = file.name.slice(file.name.lastIndexOf('.')).toLowerCase()
       if (!ALLOWED.includes(ext)) {
         setTypeError(`不支持的文件类型：${ext || '(无扩展名)'}，仅支持 PDF / DOCX / TXT`)
+        return
+      }
+      if (file.size === 0 || file.size > MAX_UPLOAD_BYTES) {
+        setTypeError(file.size === 0 ? '上传文件为空' : '文件不能超过 10 MB')
         return
       }
       setTypeError('')
